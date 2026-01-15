@@ -1,0 +1,12 @@
+__pycache__/
+.venv/
+*.zip
+*.exe
+*.msi
+*.lnk
+*.docx
+*.xlsx
+*.json
+*.txt
+logs/
+debug_captures/
