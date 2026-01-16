@@ -144,7 +144,7 @@ def main():
     print("=" * 60 + "\n")
 
     while True:  # BUCLE INFINITO [PRODUCCION]
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = time.strftime("%Y-%m-%d") # Solo FECHA
         print(f"\n[{timestamp}] INICIANDO CICLO DE ESCANEO...")
         
         manual_scan_done = False  # Resetear bandera para este ciclo
@@ -205,6 +205,57 @@ def main():
 
             if vmid == "unknown" or vmid in seen_vmids:
                 continue
+
+            # =====================================================================
+            # ESCANEO MANUAL (Solo VMs 152-161 que se saltan)
+            # =====================================================================
+            # Se activa si vemos cualquier VM dentro o después del hueco (>= 152)
+            # MOVIDO AQUI: Para que se ejecute ANTES de imprimir la VM actual (ej: 165), manteniendo el orden visual.
+            if vmid.isdigit() and int(vmid) >= 152 and not manual_scan_done:
+                print("\n    [INFO] Ejecutando Escaneo Manual (VMs 152-161)...")
+                # send_teams_message(browser, page, "[INFO] Escaneando VMs 152-161 manualmente...")
+                
+                manual_scan_done = True 
+
+                # Solo las 152-161
+                vms_manuales = {
+                    "152 vix39": "192.168.49.83",
+                    "153 vix40": "192.168.49.84",
+                    "154 vix41": "192.168.49.86",
+                    "155 vix42": "192.168.49.87",
+                    "156 vix43": "192.168.51.88",
+                    "157 vix44": "192.168.51.89",
+                    "158 vix45": "192.168.51.90",
+                    "159 vix46": "192.168.51.91",
+                    "160 47RAM": "192.168.48.91",
+                    "161 AzRpa": "192.168.48.224",
+                }
+                
+                for vm_name, ip_vm in vms_manuales.items():
+                    print(f"    [INFO] Consultando {vm_name} en {ip_vm}...")
+                    e, p = check_process_via_agent(ip_vm)
+                    
+                    if e == "activo":
+                        resultado = f"Activo ({','.join(p)})"
+                    elif e == "sin_proceso":
+                        resultado = "INICIADO" if start_bot_via_agent(ip_vm) else "Fallo"
+                    else:
+                        ping = "OK" if check_ping(ip_vm) else "FAIL"
+                        resultado = f"Sin Agente - Ping: {ping}"
+                    
+                    msg_manual = f"{vm_name:<24} | {ip_vm:<15} | {resultado}"
+                    print(msg_manual)
+                    
+                    # FILTRO MANUAL
+                    notify_m = True
+                    if resultado.startswith("Activo ("): notify_m = False
+                    if "192.168.49.76" in ip_vm: notify_m = False
+                    
+                    if notify_m:
+                         send_teams_message(browser, page, msg_manual)
+                         # pass
+                
+                print("    [INFO] Fin escaneo manual.\n")
 
             seen_vmids.add(vmid)
             display_name = f"{vmid} {name}"
@@ -268,8 +319,8 @@ def main():
             if "vix18" in name.lower() or "130" in vmid: notify = False
                 
             if notify:
-                # send_teams_message(browser, page, log_msg)
-                pass
+                send_teams_message(browser, page, log_msg)
+                # pass
 
             # VIX18
             if "130" in vmid or "vix18" in name.lower():
@@ -307,62 +358,7 @@ def main():
                     #    send_teams_message(browser, page, msg_hija)
                 print()
 
-            # =====================================================================
-            # ESCANEO MANUAL EXTENDIDO (Zona de saltos de scroll 148-164)
-            # =====================================================================
-            # Se activa si vemos cualquier VM cercana al salto (>= 147) y no hemos corrido el manual aún
-            if vmid.isdigit() and int(vmid) >= 147 and not manual_scan_done:
-                print("\n    [INFO] Ejecutando Escaneo Manual de Seguridad (VMs 148-164)...")
-                # send_teams_message(browser, page, "[INFO] Escaneando VMs 148-164 manualmente...")
-                
-                manual_scan_done = True # Marcar para no repetir en este ciclo
 
-                # IPs de TODA la zona problemática (148 a 164)
-                vms_manuales = {
-                    "148 vix35": "192.168.49.79",
-                    "149 vix36": "192.168.49.80",
-                    "150 vix37": "192.168.49.81",
-                    "151 vix38": "192.168.49.82",
-                    "152 vix39": "192.168.49.83",
-                    "153 vix40": "192.168.49.84",
-                    "154 vix41": "192.168.49.86",
-                    "155 vix42": "192.168.49.87",
-                    "156 vix43": "192.168.51.88",
-                    "157 vix44": "192.168.51.89",
-                    "158 vix45": "192.168.51.90",
-                    "159 vix46": "192.168.51.91",
-                    "160 47RAM": "192.168.48.91",
-                    "161 AzRpa": "192.168.48.224",
-                    "162 6Ram":  "192.168.51.57",
-                    "163 izziFtp": "192.168.50.37",
-                    "164 reportFid": "192.168.48.225"
-                }
-                
-                for vm_name, ip_vm in vms_manuales.items():
-                    print(f"    [INFO] Consultando {vm_name} en {ip_vm}...")
-                    e, p = check_process_via_agent(ip_vm)
-                    
-                    if e == "activo":
-                        resultado = f"Activo ({','.join(p)})"
-                    elif e == "sin_proceso":
-                        resultado = "INICIADO" if start_bot_via_agent(ip_vm) else "Fallo"
-                    else:
-                        ping = "OK" if check_ping(ip_vm) else "FAIL"
-                        resultado = f"Sin Agente - Ping: {ping}"
-                    
-                    msg_manual = f"{vm_name:<24} | {ip_vm:<15} | {resultado}"
-                    print(msg_manual)
-                    
-                    # FILTRO MANUAL
-                    notify_m = True
-                    if resultado.startswith("Activo ("): notify_m = False
-                    if "192.168.49.76" in ip_vm: notify_m = False
-                    
-                    if notify_m:
-                         # send_teams_message(browser, page, msg_manual)
-                         pass
-                
-                print("    [INFO] Fin escaneo manual.\n")
 
         print("\n" + "=" * 60)
         print(f"  CICLO COMPLETADO ({len(seen_vmids)} VMs escaneadas)")
