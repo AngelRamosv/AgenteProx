@@ -117,6 +117,68 @@ def send_teams_message(browser, proxmox_page, message):
         except: pass
         return False
 
+
+def check_teams_for_orders(browser, page_teams):
+    """
+    Fase 2: Revisa Teams (RPA izzi soporte II) por comandos de reinicio.
+    """
+    try:
+        # Selector del chat
+        chat_selector = page_teams.locator(".ui-tree-node, .ui-list-item").filter(has_text="RPA izzi soporte II")
+        if chat_selector.count() == 0: return False
+
+        # Verificar si hay indicador de no leido (negritas o badge)
+        style = chat_selector.first.get_attribute("style") or ""
+        cls = chat_selector.first.get_attribute("class") or ""
+        badge = chat_selector.locator("[class*='badge'], [class*='unread']")
+        
+        is_unread = "bold" in style or "unread" in cls or (badge.count() > 0 and badge.first.is_visible())
+        
+        if not is_unread: return False
+
+        # Si hay mensaje nuevo
+        print("\n" + "!"*60)
+        print("[ALERTA] Nuevo mensaje RPA izzi analizando...")
+        print("!"*60 + "\n")
+        
+        # Click para leer (Traer al frente)
+        page_teams.bring_to_front()
+        chat_selector.first.click()
+        time.sleep(3.0)
+        
+        # Leer ultimo mensaje
+        last_msg = page_teams.locator("[data-tid='message-body'], .ui-chat__message-content").last
+        if not last_msg.is_visible(): return False
+        
+        txt = last_msg.inner_text()
+        print(f"[TEAMS] Mensaje: {txt[:100]}...")
+        
+        # Extraer IPs
+        ips = re.findall(r'\b(?:192\.168\.(?:48|49|50|51|61)\.\d{1,3})\b', txt)
+        ips = list(set(ips))
+        
+        if ips:
+            print(f"[TEAMS] Orden para IPs: {ips}")
+            for ip_t in ips:
+                print(f"   -> Reiniciando {ip_t}...")
+                if start_bot_via_agent(ip_t):
+                    print("   -> Esperando 10s...")
+                    time.sleep(10.0)
+                    e, _ = check_process_via_agent(ip_t)
+                    res = "Reiniciado OK" if e == "activo" else "No levanto"
+                    print(f"   -> Resultado: {res}")
+                else:
+                    print(f"   -> Fallo envio comando a {ip_t}")
+        else:
+            print("[TEAMS] No se detectaron IPs validas.")
+            
+        print("[INFO] Regresando a vigilancia...\n")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR TEAMS] {e}")
+        return False
+        
 def main():
     print("Conectando a Chrome...\n")
     p = sync_playwright().start()
@@ -127,17 +189,33 @@ def main():
         return
 
     page = None
+    page_teams = None # Variable nueva Phase 2
+
     for ctx in browser.contexts:
         for pg in ctx.pages:
             url = pg.url.lower()
-            if "proxmox" in url or "192.168" in url or ":8006" in url:
+            # Proxmox estricto (:8006)
+            if ":8006" in url:
                 page = pg
-                break
-        if page: break
-
+            # Teams estricto
+            elif "teams.microsoft.com" in url:
+                page_teams = pg
+    
+    if not page:
+        # Fallback anterior
+        for ctx in browser.contexts:
+            for pg in ctx.pages:
+                if "proxmox" in pg.url and "teams" not in pg.url:
+                    page = pg; break
+    
     if not page:
         print("[ERROR] No se encontró Proxmox.")
         return
+
+    if page_teams:
+        print("[INFO] Teams detectado. Modo Escucha ON.")
+    else:
+        print("[WARN] Teams no detectado. Solo escaneo.")
 
     print("=" * 60)
     print(" AGENTE PROXMOX - MODO VIGILANCIA CONTINUA")
@@ -151,6 +229,7 @@ def main():
         
         # 0. RESET DE NAVEGACIÓN (Volver arriba para evitar desfaces)
         try:
+            page.bring_to_front() # Asegurar Foco Proxmox
             page.locator("body").click(force=True)
             page.keyboard.press("Home")
             time.sleep(1.0)
@@ -179,6 +258,15 @@ def main():
         total_rows = page.locator(row_selector).count()
 
         for i in range(start_index, total_rows):
+            
+            # --- HOOK FASE 2: Checar Teams antes de cada VM ---
+            if page_teams:
+                if check_teams_for_orders(browser, page_teams):
+                    # Si atendio algo, aseguramos foco de vuelta en Proxmox
+                    try: page.bring_to_front(); time.sleep(1.0)
+                    except: pass
+            # --------------------------------------------------
+
             try:
                 current_row = page.locator(row_selector).nth(i)
                 current_row.scroll_into_view_if_needed()
@@ -252,8 +340,8 @@ def main():
                     if "192.168.49.76" in ip_vm: notify_m = False
                     
                     if notify_m:
-                         send_teams_message(browser, page, msg_manual)
-                         # pass
+                         # send_teams_message(browser, page, msg_manual)
+                         pass
                 
                 print("    [INFO] Fin escaneo manual.\n")
 
@@ -319,8 +407,8 @@ def main():
             if "vix18" in name.lower() or "130" in vmid: notify = False
                 
             if notify:
-                send_teams_message(browser, page, log_msg)
-                # pass
+                # send_teams_message(browser, page, log_msg)
+                pass
 
             # VIX18
             if "130" in vmid or "vix18" in name.lower():
