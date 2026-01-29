@@ -153,6 +153,6 @@ RESPUESTAS_SOPORTE = [
     "Enseguida lo revisamos",
     "Ok, ya lo estamos viendo",
     "Entendido, lo checamos ahora",
-    "Ya se esta atendiendo",
+    "Ya lo estamos atendiendo",
     "Se revisa"
 ]

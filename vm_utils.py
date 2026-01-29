@@ -138,7 +138,7 @@ def remediate_ips(ips):
             print(f"[VSCode] Error: STOP no confirmado (timeout) en {ip}")
 
         print(f"[VSCode] PAUSA DE SEGURIDAD (60s) para verificar cierre de consolas en {ip}...")
-        time.sleep(60)
+        time.sleep(30)
 
         print(f"[VSCode] Ejecutando START para IP: {ip}")
 
@@ -199,8 +199,8 @@ def check_and_handle_support_message(browser, page_proxmox):
             frase = random.choice(config.RESPUESTAS_SOPORTE)
 
             # Espera
-            print("[VSCode] Esperando 3 minutos antes de enviar autoreply...")
-            time.sleep(180) 
+            print("[VSCode] Esperando 1 minuto antes de enviar autoreply...")
+            time.sleep(60) 
 
             print(f"[VSCode] Enviando respuesta autoreply: '{frase}'...")
             teams_bot.send_teams_message(
@@ -209,7 +209,7 @@ def check_and_handle_support_message(browser, page_proxmox):
                 target_chat=config.TEAMS_SUPPORT_GROUP_NAME
             )
             print("[VSCode] Esperando 1 minuto antes de proceder con el reinicio...")
-            time.sleep(60) 
+            time.sleep(30) 
     except Exception as e:
         print(f"[VSCode] Nota: No se envió autoreply ({e})")
 
