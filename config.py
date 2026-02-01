@@ -8,6 +8,7 @@ AGENT_TIMEOUT = 5
 # Teams
 TEAMS_CHANNEL_URL = "https://teams.microsoft.com/l/channel/19%3A0113cb42e12f407fb933b4b1ac742dca%40thread.tacv2/logs_proxmox?groupId=9300d12e-bf09-4717-aefd-bc1a35d87fac&tenantId=caca42e2-ad4a-4d19-824c-3ff3709bd840"
 TEAMS_SUPPORT_GROUP_NAME = "Miguel Angel Ramos Castellanos"
+#TEAMS_SUPPORT_GROUP_NAME = "RPA izzi soporte II" 
 
 # Criterios de Analisis (Soporte)
 CRITERIOS = [

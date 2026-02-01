@@ -155,9 +155,10 @@ def remediate_ips(ips):
 
 # Variable global para evitar bucles de reinicio con el mismo mensaje
 LAST_PROCESSED_TEXT = None
+LAST_AUTOREPLY_TIME = 0
 
 def check_and_handle_support_message(browser, page_proxmox):
-    global LAST_PROCESSED_TEXT
+    global LAST_PROCESSED_TEXT, LAST_AUTOREPLY_TIME
     # Ya no imprimimos spam, solo si hay mensaje
     # print("[VSCode] Revisando grupo de Teams (Soporte)...")
 
@@ -194,11 +195,13 @@ def check_and_handle_support_message(browser, page_proxmox):
 
     # Notificación automática (Autoreply)
     try:
+        import time
         import random
+        
         if browser and hasattr(config, 'RESPUESTAS_SOPORTE'):
             frase = random.choice(config.RESPUESTAS_SOPORTE)
 
-            # Espera
+            # Espera segura
             print("[VSCode] Esperando 1 minuto antes de enviar autoreply...")
             time.sleep(60) 
 
@@ -208,8 +211,10 @@ def check_and_handle_support_message(browser, page_proxmox):
                 message=frase, 
                 target_chat=config.TEAMS_SUPPORT_GROUP_NAME
             )
-            print("[VSCode] Esperando 1 minuto antes de proceder con el reinicio...")
+
+            print("[VSCode] Esperando 30s antes de proceder con el reinicio...")
             time.sleep(30) 
+             
     except Exception as e:
         print(f"[VSCode] Nota: No se envió autoreply ({e})")
 

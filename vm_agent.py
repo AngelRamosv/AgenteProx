@@ -6,7 +6,8 @@ import time
 app = Flask(__name__)
 
 # ==================== CONFIGURACIÓN ====================
-PROCESOS_CRITICOS = ['chrome.exe', 'iexplore.exe', 'msedge.exe', 'javaw.exe', 'siebel.exe']
+# Elimine conhost.exe, es peligroso. Solo cmd.exe
+PROCESOS_CRITICOS = ['chrome.exe', 'iexplore.exe', 'msedge.exe', 'javaw.exe', 'siebel.exe', 'cmd.exe']
 BAT_PATH = os.path.join(os.path.expanduser("~"), "Desktop", "init - Acceso directo.lnk")
 MEMORIA_MINIMA_MB = 40
 # ========================================================
@@ -25,8 +26,9 @@ def hay_procesos_activos():
 
             # Procesos críticos
             if p_name in PROCESOS_CRITICOS:
+                # Excepcion: cmd se detecta siempre, navegadores solo si > memoria
                 mem_mb = proc.info['memory_info'].rss / (1024 * 1024)
-                if mem_mb > MEMORIA_MINIMA_MB:
+                if p_name == 'cmd.exe' or mem_mb > MEMORIA_MINIMA_MB:
                     return True, p_name
 
             # Python bots (excluyendo este agente)
@@ -59,20 +61,29 @@ def detener_procesos_bot():
     mi_pid = os.getpid()
     script_propio = os.path.basename(__file__).lower()
     terminados = []
+    
+    # Identificar al PADRE (La consola donde corre este agente) para no matarlo
+    try:
+        parent = psutil.Process(mi_pid).parent()
+        parent_pid = parent.pid if parent else None
+    except:
+        parent_pid = None
 
     # 1) Intento suave (terminate)
     for proc in psutil.process_iter(['pid', 'name', 'memory_info', 'cmdline']):
         try:
             pid = proc.info['pid']
-            if pid == mi_pid:
+            # Protección: No matarme a mi, ni a mi padre (consola del agente)
+            if pid == mi_pid or pid == parent_pid:
                 continue
 
             name = (proc.info['name'] or "").lower()
 
-            # Críticos con memoria > umbral
+            # Críticos 
             if name in PROCESOS_CRITICOS:
                 mem_mb = proc.info['memory_info'].rss / (1024 * 1024)
-                if mem_mb > MEMORIA_MINIMA_MB:
+                # Matar siempre cmd, o navegadores pesados
+                if name == 'cmd.exe' or mem_mb > MEMORIA_MINIMA_MB:
                     proc.terminate()
                     terminados.append(f"{name}:{pid}")
 
