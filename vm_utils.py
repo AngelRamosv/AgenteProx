@@ -56,12 +56,12 @@ def start_bot_via_agent(ip):
     for intento in range(3):
         try:
             url = f"http://{ip}:{config.AGENT_PORT}/start"
-            res = requests.post(url, timeout=config.AGENT_TIMEOUT, proxies={"http": None, "https": None})
+            # Timeout aumentado a 10s para dar tiempo al proceso
+            res = requests.post(url, timeout=10, proxies={"http": None, "https": None})
             if res.status_code == 200:
                 return True
         except Exception as e:
             if intento < 2: time.sleep(2)
-            # print(f"    [DEBUG] Falló START intento {intento+1} en {ip}: {e}")
             pass
     return False
 
@@ -69,12 +69,12 @@ def stop_bot_via_agent(ip):
     for intento in range(3):
         try:
             url = f"http://{ip}:{config.AGENT_PORT}/stop"
-            res = requests.post(url, timeout=config.AGENT_TIMEOUT, proxies={"http": None, "https": None})
+            # Timeout aumentado a 10s porque STOP tarda minimo 2s en backend
+            res = requests.post(url, timeout=10, proxies={"http": None, "https": None})
             if res.status_code == 200:
                 return True
         except Exception as e:
             if intento < 2: time.sleep(2)
-            # print(f"    [DEBUG] Falló STOP intento {intento+1} en {ip}: {e}")
             pass
     return False
 
