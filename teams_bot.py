@@ -138,7 +138,7 @@ def read_latest_message_from_group(browser, group_name, page_proxmox=None):
         if final_text:
             print(f"    [TEAMS EXTRACT] \"{final_text[:60]}...\"")
             
-        return final_text
+        return result  # Ahora retorna el dict completo con mid, text y locator
 
     except Exception as e:
         print(f"[TEAMS ERROR] {e}")
@@ -236,12 +236,16 @@ def read_last_message_text_plus_image_ocr(page):
 
         ips = extract_ips(final_text)
 
-        return {"mid": mid, "text": final_text, "ips": ips}
+        # Usar un locator estable basado en data-mid (ID unico de Teams)
+        # Esto asegura que regresemos al mensaje correcto aunque haya mensajes nuevos.
+        stable_locator = page.locator(f"[data-mid='{mid}']").last
+
+        return {"mid": mid, "text": final_text, "ips": ips, "locator": stable_locator}
     except Exception as e:
         print(f"    [TEAMS INTERNAL ERROR] {e}")
         return None
 
-def send_teams_message(browser, message, target_chat="logs_proxmox"):
+def send_teams_message(browser, message, target_chat="logs_proxmox", reply_to_locator=None, force_quote=False):
     try:
         page_teams = get_teams_page(browser)
         if not page_teams:
@@ -261,12 +265,65 @@ def send_teams_message(browser, message, target_chat="logs_proxmox"):
                      page_teams.goto(config.TEAMS_CHANNEL_URL)
                      time.sleep(3.0)
         
+        # Lógica de Respuesta Citada (Solo si force_quote=True)
+        if reply_to_locator and force_quote:
+            try:
+                print("    [TEAMS DEBUG] Iniciando efecto de cita en el mensaje original...")
+                reply_to_locator.scroll_into_view_if_needed()
+                
+                # Mover el mouse al centro del mensaje para despertar la barra de herramientas
+                box = reply_to_locator.bounding_box()
+                if box:
+                    page_teams.mouse.move(box['x'] + box['width']/2, box['y'] + box['height']/2)
+                else:
+                    reply_to_locator.hover()
+                
+                page_teams.wait_for_timeout(1000)
+
+                # 1. Intentar clic en los tres puntitos 'Más opciones' o el ícono de cita
+                btn_quote = page_teams.locator("button[aria-label*='cita'], button[aria-label*='Quote']").first
+                
+                if btn_quote.is_visible():
+                    print("    [TEAMS DEBUG] Clic directo en ícono de cita.")
+                    btn_quote.click()
+                else:
+                    # Plan B: Clic en los tres puntitos (...)
+                    print("    [TEAMS DEBUG] Buscando los tres puntitos 'Más opciones'...")
+                    btn_more = page_teams.locator("button[aria-label*='opciones'], button[aria-label*='options'], [data-tid*='more-options']").last
+                    
+                    if btn_more.is_visible():
+                        btn_more.click(force=True)
+                        page_teams.wait_for_timeout(1000)
+                        
+                        # 2. Seleccionar "Responder con una cita" del menú emergente
+                        print("    [TEAMS DEBUG] Seleccionando 'Responder con una cita' del menú...")
+                        menu_item = page_teams.locator("span, button, [role='menuitem']").filter(has_text="Responder con una cita").last
+                        menu_item.click()
+                    else:
+                        print("    [TEAMS DEBUG] No se encontró el ícono de los tres puntitos.")
+                
+                page_teams.wait_for_timeout(1000)
+            except Exception as e_quote: 
+                print(f"    [TEAMS DEBUG] Error ejecutando efecto cita: {e_quote}")
+        else:
+            # Si no hay cita forzada, aseguramos que el chat esté listo
+            time.sleep(0.5)
+
         input_box = page_teams.locator("div[contenteditable='true'], div[data-tid='ckeditor']").first
         if input_box.is_visible(timeout=5000):
             input_box.click(force=True)
-            input_box.fill(message)
+            
+            if reply_to_locator and force_quote:
+                # Escribir debajo de la cita
+                page_teams.keyboard.press("Control+End")
+                page_teams.keyboard.press("Enter")
+                page_teams.keyboard.insert_text(message)
+            else:
+                # Mensaje normal o autoreply rápido
+                input_box.fill(message)
+                
             page_teams.keyboard.press("Enter")
-            time.sleep(0.5)
+            page_teams.wait_for_timeout(200)
             return True
         else:
             return False

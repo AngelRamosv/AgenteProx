@@ -53,11 +53,13 @@ def check_process_via_agent(ip):
     return "sin_agente", "Falla General"
 
 def start_bot_via_agent(ip):
+    # Calentamiento de red para asegurar que la ruta esté activa
+    is_pingable(ip)
     for intento in range(3):
         try:
             url = f"http://{ip}:{config.AGENT_PORT}/start"
-            # Timeout aumentado a 10s para dar tiempo al proceso
-            res = requests.post(url, timeout=10, proxies={"http": None, "https": None})
+            # Timeout aumentado a 30s para dar margen total en redes lentas
+            res = requests.post(url, timeout=30, proxies={"http": None, "https": None})
             if res.status_code == 200:
                 return True
         except Exception as e:
@@ -66,11 +68,13 @@ def start_bot_via_agent(ip):
     return False
 
 def stop_bot_via_agent(ip):
+    # Calentamiento de red para asegurar que la ruta esté activa
+    is_pingable(ip)
     for intento in range(3):
         try:
             url = f"http://{ip}:{config.AGENT_PORT}/stop"
-            # Timeout aumentado a 10s porque STOP tarda minimo 2s en backend
-            res = requests.post(url, timeout=10, proxies={"http": None, "https": None})
+            # Timeout aumentado a 30s porque STOP es una operacion pesada
+            res = requests.post(url, timeout=30, proxies={"http": None, "https": None})
             if res.status_code == 200:
                 return True
         except Exception as e:
@@ -146,6 +150,12 @@ def activate_izzi_process(browser, target_ip):
         page.bring_to_front()
         time.sleep(1.0)
 
+        # >>> RESET A P1: Siempre empezar búscando desde la primera página <<<
+        btn1 = page.locator("ul.pagination li, button, a").filter(has_text="1").first
+        if btn1.is_visible():
+            btn1.click()
+            time.sleep(2.0)
+
         # 1. Buscar fila (Usando Regex para evitar falsos positivos tipo .4 vs .40)
         # \bIP\b asegura coincidencia exacta
         try:
@@ -209,6 +219,7 @@ def activate_izzi_process(browser, target_ip):
                             btn_confirmar.wait_for(state="visible", timeout=3000)
                             btn_confirmar.click()
                             print(f"    [IZZI] Clic en maquina correctamente (Clase)")
+                            return True # <--- AGREGADO: Confirmar éxito al bot principal
     
                         except:
                             # Intento 2: Por Texto del Label (Estrategia infalible visual)
@@ -219,6 +230,7 @@ def activate_izzi_process(browser, target_ip):
                                 # Clic en el botón padre del span
                                 btn_label.locator("..").click() 
                                 print(f"    [IZZI] Clic en maquina correctamente (Texto)")
+                                return True  # Éxito
                             except Exception as e_btn:
                                 print(f"    [IZZI ERROR] Botón 'Si, Enviar' no apareció ni por clase ni por texto. {e_btn}")
                         
@@ -236,8 +248,10 @@ def activate_izzi_process(browser, target_ip):
 
     except Exception as e:
         print(f"    [IZZI EXCEPTION] {e}")
+    return False # Falló
 
 def remediate_ips(browser, ips):
+    verdes = []
     for ip in ips:
         print(f"[VSCode] Analizando equipo... {ip}")
         print(f"[VSCode] Reiniciando bot (STOP/START) para IP: {ip}")
@@ -266,11 +280,13 @@ def remediate_ips(browser, ips):
             
             # >>> ACTIVAR EN IZZI <<<
             if browser:
-                activate_izzi_process(browser, ip)
+                if activate_izzi_process(browser, ip):
+                    verdes.append(ip)
             
             print(f"[VSCode] Reiniciando bot de equipo ({ip}) exitosamente")
         else:
             print(f"[VSCode] Error: START no confirmado (timeout) en {ip}")
+    return verdes
 
 # Variable global para evitar bucles de reinicio con el mismo mensaje
 LAST_PROCESSED_TEXT = None
@@ -278,18 +294,20 @@ LAST_PROCESSED_TEXT = None
 def check_and_handle_support_message(browser, page_proxmox):
     global LAST_PROCESSED_TEXT
     
-    msg = teams_bot.read_latest_message_from_group(browser, config.TEAMS_SUPPORT_GROUP_NAME, page_proxmox=page_proxmox)
-    if not msg:
+    # Capturar resultado completo (GPS del mensaje)
+    res = teams_bot.read_latest_message_from_group(browser, config.TEAMS_SUPPORT_GROUP_NAME, page_proxmox=page_proxmox)
+    if not res:
         return
 
-    if msg == LAST_PROCESSED_TEXT:
+    msg_text = res["text"].strip()
+    if LAST_PROCESSED_TEXT and msg_text == LAST_PROCESSED_TEXT.strip():
         return
 
     print("[PAUSA] Mensaje nuevo detectado en Teams (soporte)")
-    print(f"    [TEAMS LEIDO] Contenido Validado: \"{msg}\"")
+    print(f"    [TEAMS LEIDO] Contenido Validado: \"{msg_text}\"")
     
-    LAST_PROCESSED_TEXT = msg
-    msg_low = msg.lower()
+    LAST_PROCESSED_TEXT = msg_text
+    msg_low = msg_text.lower()
 
     if not matches_criteria(msg_low):
         print("[VSCode] El analisis no corresponde con los criterios reanudando escaneo...")
@@ -305,25 +323,52 @@ def check_and_handle_support_message(browser, page_proxmox):
     print("[VSCode] Analizando... coincide con criterios")
     print(f"[VSCode] IPs a reiniciar: {', '.join(ips)}")
 
-    # Autoreply
+    # Autoreply Inicial (Cito el mensaje usando res['locator'])
     try:
         if browser and hasattr(config, 'RESPUESTAS_SOPORTE'):
             frase = random.choice(config.RESPUESTAS_SOPORTE)
-
             print("[VSCode] Esperando 1 minuto antes de enviar autoreply...")
             time.sleep(60) 
-
-            print(f"[VSCode] Enviando respuesta autoreply: '{frase}'...")
+            print(f"    [VSCode] Enviando respuesta autoreply: '{frase}'...")
             teams_bot.send_teams_message(
                 browser, 
                 message=frase, 
-                target_chat=config.TEAMS_SUPPORT_GROUP_NAME
+                target_chat=config.TEAMS_SUPPORT_GROUP_NAME,
+                reply_to_locator=None, # Sin cita para mayor velocidad
+                force_quote=False
             )
+            # Guardamos en memoria para no auto-contestarse
+            LAST_PROCESSED_TEXT = frase.strip()
+
             print("[VSCode] Esperando 30s antes de proceder con el reinicio...")
             time.sleep(30) 
     except Exception as e:
         print(f"[VSCode] Nota: No se envió autoreply ({e})")
 
-    # Pasar browser para interaccion Izzi
-    remediate_ips(browser, ips)
+    # Ejecutar y obtener lista de éxitos
+    exitos = remediate_ips(browser, ips)
+    
+    # Mensaje Final de Confirmación (Solo si hubo éxitos)
+    if exitos:
+        try:
+            print("[VSCode] Esperando 1 minuto antes de la confirmación final...")
+            time.sleep(60)
+            
+            frase_exito = random.choice(config.RESPUESTAS_EXITO)
+            msg_final = f"{frase_exito} {', '.join(exitos)}"
+            
+            print(f"[VSCode] Enviando confirmación final (mensaje normal): '{msg_final}'...")
+            teams_bot.send_teams_message(
+                browser,
+                message=msg_final,
+                target_chat=config.TEAMS_SUPPORT_GROUP_NAME,
+                reply_to_locator=None, # Sin cita
+                force_quote=False     # Mensaje normal
+            )
+            # Guardamos en memoria para no auto-contestarse
+            LAST_PROCESSED_TEXT = msg_final.strip()
+        except Exception as e_fin:
+            print(f"[VSCode] Error enviando confirmación final: {e_fin}")
+
     print("[REANUDAR] Terminado soporte, retomando escaneo normal.\n")
+
